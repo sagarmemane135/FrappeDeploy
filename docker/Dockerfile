@@ -32,7 +32,7 @@ COPY docker/fetch_apps.py /opt/fetch_apps.py
 COPY apps.json* /opt/apps.json
 
 # Fetch all applications into /home/frappe/frappe-bench/apps (using SSH agent or Tokens)
-RUN --mount=type=ssh \
+RUN --mount=type=ssh,required=false \
     --mount=type=secret,id=git_token,required=false \
     --mount=type=secret,id=github_token,required=false \
     python3 /opt/fetch_apps.py
