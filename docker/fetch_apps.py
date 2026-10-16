@@ -178,7 +178,9 @@ def main():
 
     for app in apps:
         url = app.get("url")
-        branch = app.get("branch", "main")
+        tag = app.get("tag")
+        branch = app.get("branch")
+        ref = tag or branch or app.get("ref") or "main"
         name = get_app_name(app)
 
         if not url:
@@ -192,22 +194,47 @@ def main():
             print(f"[fetch_apps] App '{name}' already present at {dest_dir}. Skipping clone.")
             continue
 
-        print(f"\n[fetch_apps] Fetching '{name}' from {url} (branch: {branch})...")
-        clone_cmd = f"git clone --depth 1 -b '{branch}' '{url}' '{dest_dir}'"
+        print(f"\n[fetch_apps] Fetching '{name}' from {url} (ref: {ref})...")
+        clone_cmd = f"git clone --depth 1 -b '{ref}' '{url}' '{dest_dir}'"
 
         result = run_cmd(clone_cmd, check=False)
         if result.returncode != 0:
-            print(
-                f"\n[fetch_apps] FAILED to clone '{name}' from '{url}'.\n"
-                "If this is a PRIVATE repository, ensure you have provided credentials:\n"
-                "  - For SSH (git@github.com:...): use BuildKit SSH forwarding -> docker build --ssh default ...\n"
-                "  - For HTTPS (https://...): pass secret/token -> docker build --secret id=git_token,src=token.txt ...\n"
-                "    or -> docker build --build-arg GITHUB_TOKEN=your_token ...\n",
-                file=sys.stderr,
-            )
-            if result.stderr:
-                print(f"[fetch_apps] Git Error details: {result.stderr}", file=sys.stderr)
-            sys.exit(1)
+            output = f"{result.stdout}\n{result.stderr}".lower()
+            if any(err in output for err in [
+                "not found in upstream origin",
+                "could not find remote branch",
+                "couldn't find remote ref",
+                "tag not found",
+                "invalid reference",
+            ]):
+                print(
+                    f"\n[fetch_apps] ERROR: Tag or branch '{ref}' not found for app '{name}' (URL: {url}).\n",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            elif any(err in output for err in [
+                "could not read username",
+                "authentication failed",
+                "permission denied (publickey)",
+                "host key verification failed",
+            ]):
+                print(
+                    f"\n[fetch_apps] ERROR: Authentication failed for app '{name}' (URL: {url}).\n"
+                    "If this is a PRIVATE repository, ensure you have provided credentials:\n"
+                    "  - For SSH (git@github.com:...): use BuildKit SSH forwarding -> docker build --ssh default ...\n"
+                    "  - For HTTPS (https://...): pass secret/token -> docker build --secret id=git_token,src=token.txt ...\n"
+                    "    or -> docker build --build-arg GITHUB_TOKEN=your_token ...\n",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            else:
+                print(
+                    f"\n[fetch_apps] ERROR: Failed to clone app '{name}' from '{url}' (target: '{ref}').\n",
+                    file=sys.stderr,
+                )
+                if result.stderr:
+                    print(f"[fetch_apps] Git Error details:\n{result.stderr.strip()}\n", file=sys.stderr)
+                sys.exit(1)
 
         print(f"[fetch_apps] Successfully cloned '{name}'.")
 
