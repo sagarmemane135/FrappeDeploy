@@ -24,6 +24,9 @@ Thumbs.db
 *.tgz
 *.zip
 
+# Local cloned apps for Docker build context
+apps/
+
 # Logs
 logs/
 *.log
