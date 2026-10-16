@@ -1,7 +1,7 @@
 # Global build arguments (available in all FROM instructions)
 ARG PYTHON_VERSION=3.11
 ARG NODE_VERSION=18
-ARG DEBIAN_RELEASE=bullseye
+ARG DEBIAN_RELEASE=bookworm
 
 # ==============================================================================
 # STAGE 0: Application Source Fetcher (Clones from Git via apps.json or build args)
@@ -22,11 +22,6 @@ ARG APPS_JSON_BASE64=""
 ARG GITHUB_TOKEN=""
 ARG GIT_TOKEN=""
 
-ENV APPS_JSON=${APPS_JSON} \
-    APPS_JSON_BASE64=${APPS_JSON_BASE64} \
-    GITHUB_TOKEN=${GITHUB_TOKEN} \
-    GIT_TOKEN=${GIT_TOKEN}
-
 # Copy cloner automation & apps specification (no host apps required)
 COPY docker/fetch_apps.py /opt/fetch_apps.py
 COPY apps.json* /opt/apps.json
@@ -35,6 +30,10 @@ COPY apps.json* /opt/apps.json
 RUN --mount=type=ssh,required=false \
     --mount=type=secret,id=git_token,required=false \
     --mount=type=secret,id=github_token,required=false \
+    APPS_JSON="${APPS_JSON}" \
+    APPS_JSON_BASE64="${APPS_JSON_BASE64}" \
+    GITHUB_TOKEN="${GITHUB_TOKEN}" \
+    GIT_TOKEN="${GIT_TOKEN}" \
     python3 /opt/fetch_apps.py
 
 
