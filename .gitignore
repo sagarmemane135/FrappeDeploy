@@ -6,6 +6,8 @@
 *.key
 *.crt
 certs/
+!compose/certs/
+!compose/certs/**
 secrets/
 
 # OS and editor files
