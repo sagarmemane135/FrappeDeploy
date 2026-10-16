@@ -1,5 +1,10 @@
 version: "3.8"
 
+networks:
+  frappe-network:
+    name: frappe-network
+    driver: bridge
+
 volumes:
   mariadb-storage:
     name: frappe-mariadb-data

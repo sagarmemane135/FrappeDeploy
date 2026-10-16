@@ -178,7 +178,32 @@ This framework leverages **Nginx `X-Accel-Redirect`**:
 
 ---
 
-## 6. Deployment Guides
+## 6. Building Container Images
+
+The architecture decouples the core application runtime from the reverse proxy edge:
+1. **Application Runtime Image** (`Dockerfile`): Multi-stage container encapsulating Python virtual environment, all installed Frappe apps, pre-compiled static assets, and CLI tools.
+2. **Reverse Proxy Image** (`Dockerfile.nginx`): Lightweight Alpine-based Nginx with runtime environment-variable template rendering, gzip compression, and `X-Accel-Redirect` protection.
+
+### Building the Application Image
+Execute from the bench root directory:
+```bash
+docker build \
+  -t my-registry.io/erp/frappe-app:v1.0.0 \
+  -f deploy/docker/Dockerfile .
+```
+
+### Building the Nginx Reverse Proxy Image
+Execute from the `deploy/docker` directory (standalone, no bench dependencies needed):
+```bash
+cd deploy/docker
+docker build \
+  -t my-registry.io/erp/frappe-nginx:v1.0.0 \
+  -f Dockerfile.nginx .
+```
+
+---
+
+## 7. Deployment Guides
 
 ### A. Single-Server Deployment (Docker Compose)
 
@@ -201,7 +226,9 @@ This framework leverages **Nginx `X-Accel-Redirect`**:
 
 3. **Verify Health**:
    ```bash
-   docker compose exec web /home/frappe/frappe-bench/deploy/scripts/health-check.sh
+   docker compose exec web health-check.sh
+   # Or from host:
+   ./scripts/health-check.sh
    ```
 
 ---
@@ -228,7 +255,7 @@ This framework leverages **Nginx `X-Accel-Redirect`**:
 
 ---
 
-## 7. Operational Playbook & CLI Automation
+## 8. Operational Playbook & CLI Automation
 
 The framework includes `deploy/scripts/site-ops.sh` to manage multi-tenant lifecycles cleanly.
 
@@ -270,7 +297,7 @@ export S3_BUCKET="my-company-erp-backups"
 
 ---
 
-## 8. Sizing & Production Tuning Matrix
+## 9. Sizing & Production Tuning Matrix
 
 | Layer | Parameter | Recommended Value | Reason |
 | :--- | :--- | :--- | :--- |

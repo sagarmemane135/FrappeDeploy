@@ -3,7 +3,7 @@ kind: Kustomization
 
 namespace: erp-staging
 
-bases:
+resources:
   - ../../base
 
 images:

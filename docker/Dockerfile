@@ -130,10 +130,17 @@ ENV PATH="/home/frappe/frappe-bench/env/bin:$PATH" \
     FRAPPE_STREAM_LOGGING=1 \
     SITES_PATH="/home/frappe/frappe-bench/sites"
 
-# Entrypoint script
+# Entrypoint and operation automation scripts
 COPY --chown=frappe:frappe docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY --chown=frappe:frappe scripts/site-ops.sh /usr/local/bin/site-ops.sh
+COPY --chown=frappe:frappe scripts/health-check.sh /usr/local/bin/health-check.sh
+COPY --chown=frappe:frappe scripts/backup-s3.sh /usr/local/bin/backup-s3.sh
+
 USER root
-RUN chmod +x /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh \
+             /usr/local/bin/site-ops.sh \
+             /usr/local/bin/health-check.sh \
+             /usr/local/bin/backup-s3.sh
 USER frappe
 
 EXPOSE 8000 9000

@@ -29,9 +29,16 @@ echo "=================================================="
 echo " Frappe Environment Health Diagnostic"
 echo "=================================================="
 
+# Auto-detect test tenant site or use HEALTHCHECK_SITE env var
+SITES_PATH="${SITES_PATH:-/home/frappe/frappe-bench/sites}"
+DETECTED_SITE=$(find "$SITES_PATH" -maxdepth 2 -name "site_config.json" -exec dirname {} + 2>/dev/null | head -n 1 | xargs -n 1 basename 2>/dev/null || true)
+TEST_SITE="${HEALTHCHECK_SITE:-${DETECTED_SITE:-sis.local}}"
+
+log_info "Targeting site: $TEST_SITE for connectivity checks..."
+
 # 1. Database Connectivity
 log_info "Testing Relational Database Connection..."
-if python3 -c "import frappe; frappe.init('sis.local'); frappe.connect(); print('DB connection verified.'); frappe.destroy()" 2>/dev/null; then
+if python3 -c "import frappe; frappe.init('$TEST_SITE'); frappe.connect(); print('DB connection verified.'); frappe.destroy()" 2>/dev/null; then
     log_ok "Database connected successfully and queries execute properly."
 else
     log_fail "Database connection failed! Verify DB_HOST, credentials, and network."
@@ -39,7 +46,7 @@ fi
 
 # 2. Redis Cache Verification
 log_info "Testing Redis Cache..."
-if python3 -c "import frappe; frappe.init('sis.local'); frappe.cache.set_value('_health_test', 1); assert frappe.cache.get_value('_health_test') == 1; print('Cache read/write verified.')" 2>/dev/null; then
+if python3 -c "import frappe; frappe.init('$TEST_SITE'); frappe.cache.set_value('_health_test', 1); assert frappe.cache.get_value('_health_test') == 1; print('Cache read/write verified.')" 2>/dev/null; then
     log_ok "Redis Cache read/write operation succeeded."
 else
     log_fail "Redis Cache connection or read/write failed!"
@@ -67,7 +74,7 @@ fi
 # 5. Application Web Ping (HTTP)
 log_info "Testing Local Web WSGI Ping..."
 HTTP_PORT="${WEBSERVER_PORT:-8000}"
-if curl -s -f "http://localhost:${HTTP_PORT}/api/method/frappe.ping" -H "Host: sis.local" | grep -q "pong"; then
+if curl -s -f "http://localhost:${HTTP_PORT}/api/method/frappe.ping" -H "Host: $TEST_SITE" | grep -q "pong"; then
     log_ok "Web server responded with 'pong' on port ${HTTP_PORT}."
 else
     log_fail "Web server failed to return pong on port ${HTTP_PORT}!"

@@ -1,17 +1,21 @@
 FROM nginx:1.25-alpine
 
-# Remove default configuration
-RUN rm -rf /etc/nginx/conf.d/*
+# Remove default configurations and templates
+RUN rm -rf /etc/nginx/conf.d/* /etc/nginx/templates/*
 
 # Copy master Nginx configuration
-COPY deploy/docker/nginx/nginx.conf /etc/nginx/nginx.conf
+COPY nginx/nginx.conf /etc/nginx/nginx.conf
 
-# Copy dynamic virtual host templates
-# nginx:alpine automatically executes envsubst on files in /etc/nginx/templates/*.template
-# and outputs them to /etc/nginx/conf.d/*.conf
-COPY deploy/docker/nginx/templates/default.conf.template /etc/nginx/templates/default.conf.template
+# Store templates in templates-available directory
+RUN mkdir -p /etc/nginx/templates-available /etc/nginx/templates
+COPY nginx/templates/default.conf.template /etc/nginx/templates-available/default.conf.template
+COPY nginx/templates/default-ssl.conf.template /etc/nginx/templates-available/default-ssl.conf.template
 
-# Default template environment variables (can be overridden at runtime)
+# Dynamic template selector entrypoint
+COPY nginx/docker-entrypoint.sh /docker-entrypoint-override.sh
+RUN chmod +x /docker-entrypoint-override.sh
+
+# Default environment variables (can be overridden at runtime)
 ENV UPSTREAM_WEB="web:8000" \
     UPSTREAM_SOCKETIO="socketio:9000" \
     CLIENT_MAX_BODY_SIZE="50M" \
@@ -25,4 +29,5 @@ ENV UPSTREAM_WEB="web:8000" \
 
 EXPOSE 80 443
 
+ENTRYPOINT ["/docker-entrypoint-override.sh"]
 CMD ["nginx", "-g", "daemon off;"]

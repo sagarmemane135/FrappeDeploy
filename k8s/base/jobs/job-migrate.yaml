@@ -30,7 +30,7 @@ spec:
             - -c
             - |
               set -e
-              TARGET_SITE="${SITE_NAME:-sis.local}"
+              TARGET_SITE="${SITE_NAME:-erp.example.com}"
               echo ">>> Starting automated migration sequence for: $TARGET_SITE"
 
               echo "1. Enabling Maintenance Mode..."
@@ -54,7 +54,7 @@ spec:
               echo ">>> Migration completed successfully for $TARGET_SITE"
           env:
             - name: SITE_NAME
-              value: "sis.local" # Override with specific tenant site name or via helm/kustomize
+              value: "erp.example.com" # Override with specific tenant site name or via helm/kustomize
           envFrom:
             - configMapRef:
                 name: frappe-bench-config
