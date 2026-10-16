@@ -149,6 +149,7 @@ ARG NODE_VERSION=18
 
 # System runtime dependencies (libraries only, no compilers)
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
     mariadb-client \
     postgresql-client \
     libmariadb3 \
@@ -176,6 +177,8 @@ RUN groupadd -g 1000 frappe && \
 USER frappe
 WORKDIR /home/frappe/frappe-bench
 
+RUN git config --global --add safe.directory "*"
+
 # Copy Python virtual environment from Stage 2
 COPY --chown=frappe:frappe --from=backend-builder /home/frappe/frappe-bench/env /home/frappe/frappe-bench/env
 
@@ -200,6 +203,7 @@ COPY --chown=frappe:frappe --from=app-source-builder /home/frappe/frappe-bench/s
 ENV PATH="/home/frappe/frappe-bench/env/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     FRAPPE_STREAM_LOGGING=1 \
+    GIT_PYTHON_REFRESH=quiet \
     SITES_PATH="/home/frappe/frappe-bench/sites"
 
 # Entrypoint and operation automation scripts
