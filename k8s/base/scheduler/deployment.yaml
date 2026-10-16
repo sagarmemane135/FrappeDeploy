@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frappe-scheduler
+  labels:
+    app.kubernetes.io/name: frappe
+    app.kubernetes.io/component: scheduler
+spec:
+  # CRITICAL ARCHITECTURAL CONSTRAINT: Replicas must strictly be 1
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: frappe
+      app.kubernetes.io/component: scheduler
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: frappe
+        app.kubernetes.io/component: scheduler
+    spec:
+      volumes:
+        - name: sites-storage
+          persistentVolumeClaim:
+            claimName: frappe-sites-pvc
+        - name: config-volume
+          configMap:
+            name: frappe-bench-config
+      containers:
+        - name: scheduler
+          image: frappe-app:latest
+          command: ["bench", "schedule"]
+          envFrom:
+            - configMapRef:
+                name: frappe-bench-config
+            - secretRef:
+                name: frappe-secrets
+          volumeMounts:
+            - name: sites-storage
+              mountPath: /home/frappe/frappe-bench/sites
+            - name: config-volume
+              mountPath: /home/frappe/frappe-bench/sites/common_site_config.json
+              subPath: common_site_config.json
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

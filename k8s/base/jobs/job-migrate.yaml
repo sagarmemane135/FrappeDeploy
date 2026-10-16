@@ -1,0 +1,75 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: frappe-site-migrate
+  labels:
+    app.kubernetes.io/name: frappe
+    app.kubernetes.io/component: migrate-job
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 86400 # Cleanup completed job after 24 hours
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: frappe
+        app.kubernetes.io/component: migrate-job
+    spec:
+      restartPolicy: Never
+      volumes:
+        - name: sites-storage
+          persistentVolumeClaim:
+            claimName: frappe-sites-pvc
+        - name: config-volume
+          configMap:
+            name: frappe-bench-config
+      containers:
+        - name: migrate
+          image: frappe-app:latest
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              TARGET_SITE="${SITE_NAME:-sis.local}"
+              echo ">>> Starting automated migration sequence for: $TARGET_SITE"
+
+              echo "1. Enabling Maintenance Mode..."
+              bench --site "$TARGET_SITE" set-maintenance-mode on || true
+
+              echo "2. Verifying queue readiness..."
+              bench --site "$TARGET_SITE" ready-for-migration || echo "Proceeding with migration..."
+
+              echo "3. Creating pre-migration snapshot backup..."
+              bench --site "$TARGET_SITE" backup
+
+              echo "4. Executing schema synchronization & patches..."
+              bench --site "$TARGET_SITE" migrate
+
+              echo "5. Invalidating global cache..."
+              bench --site "$TARGET_SITE" clear-cache
+
+              echo "6. Restoring normal traffic (Disabling Maintenance Mode)..."
+              bench --site "$TARGET_SITE" set-maintenance-mode off
+
+              echo ">>> Migration completed successfully for $TARGET_SITE"
+          env:
+            - name: SITE_NAME
+              value: "sis.local" # Override with specific tenant site name or via helm/kustomize
+          envFrom:
+            - configMapRef:
+                name: frappe-bench-config
+            - secretRef:
+                name: frappe-secrets
+          volumeMounts:
+            - name: sites-storage
+              mountPath: /home/frappe/frappe-bench/sites
+            - name: config-volume
+              mountPath: /home/frappe/frappe-bench/sites/common_site_config.json
+              subPath: common_site_config.json
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 2000m
+              memory: 3Gi

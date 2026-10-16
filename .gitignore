@@ -1,0 +1,29 @@
+# Environment and secret files
+.env
+*.env
+!*.env.example
+*.pem
+*.key
+*.crt
+certs/
+secrets/
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Backup archives
+*.sql
+*.sql.gz
+*.tar
+*.tgz
+*.zip
+
+# Logs
+logs/
+*.log

@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frappe-socketio
+  labels:
+    app.kubernetes.io/name: frappe
+    app.kubernetes.io/component: socketio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: frappe
+      app.kubernetes.io/component: socketio
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: frappe
+        app.kubernetes.io/component: socketio
+    spec:
+      volumes:
+        - name: sites-storage
+          persistentVolumeClaim:
+            claimName: frappe-sites-pvc
+        - name: config-volume
+          configMap:
+            name: frappe-bench-config
+      containers:
+        - name: socketio
+          image: frappe-app:latest
+          command: ["node", "/home/frappe/frappe-bench/apps/frappe/socketio.js"]
+          ports:
+            - containerPort: 9000
+              name: socketio
+          envFrom:
+            - configMapRef:
+                name: frappe-bench-config
+          volumeMounts:
+            - name: sites-storage
+              mountPath: /home/frappe/frappe-bench/sites
+            - name: config-volume
+              mountPath: /home/frappe/frappe-bench/sites/common_site_config.json
+              subPath: common_site_config.json
+          livenessProbe:
+            tcpSocket:
+              port: 9000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            tcpSocket:
+              port: 9000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

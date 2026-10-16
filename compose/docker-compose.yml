@@ -1,0 +1,292 @@
+version: "3.8"
+
+networks:
+  frappe-network:
+    name: frappe-network
+    driver: bridge
+
+volumes:
+  # Strategy B: Shared Persistent Volume for all tenant sites, assets, and uploads
+  sites-storage:
+    name: frappe-sites-data
+  redis-queue-storage:
+    name: frappe-redis-queue-data
+
+services:
+  # ============================================================================
+  # 1. Redis Cache (In-Memory, Transient, LRU Eviction)
+  # ============================================================================
+  redis-cache:
+    image: redis:7-alpine
+    container_name: frappe-redis-cache
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --maxmemory
+      - "${REDIS_CACHE_MAXMEMORY:-512mb}"
+      - --maxmemory-policy
+      - allkeys-lru
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+    networks:
+      - frappe-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ============================================================================
+  # 2. Redis Queue (Persistent Background Job Broker & Real-time PubSub)
+  # ============================================================================
+  redis-queue:
+    image: redis:7-alpine
+    container_name: frappe-redis-queue
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --maxmemory
+      - "${REDIS_QUEUE_MAXMEMORY:-1gb}"
+      - --maxmemory-policy
+      - noeviction
+      - --save
+      - "900"
+      - "1"
+      - --save
+      - "300"
+      - "10"
+      - --appendonly
+      - "yes"
+    volumes:
+      - redis-queue-storage:/data
+    networks:
+      - frappe-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ============================================================================
+  # 3. Frappe Web (Gunicorn WSGI Application Server)
+  # ============================================================================
+  web:
+    image: ${FRAPPE_IMAGE:-frappe-app:latest}
+    container_name: frappe-web
+    restart: unless-stopped
+    command:
+      - gunicorn
+      - -b
+      - 0.0.0.0:8000
+      - --workers
+      - "${GUNICORN_WORKERS:-4}"
+      - --threads
+      - "${GUNICORN_THREADS:-2}"
+      - --timeout
+      - "${GUNICORN_TIMEOUT:-120}"
+      - --max-requests
+      - "${GUNICORN_MAX_REQUESTS:-1000}"
+      - --max-requests-jitter
+      - "${GUNICORN_MAX_REQUESTS_JITTER:-100}"
+      - frappe.app:application
+      - --preload
+    environment:
+      FRAPPE_DB_HOST: ${FRAPPE_DB_HOST:-mariadb}
+      FRAPPE_DB_PORT: ${FRAPPE_DB_PORT:-3306}
+      FRAPPE_DB_TYPE: ${FRAPPE_DB_TYPE:-mariadb}
+      FRAPPE_REDIS_CACHE: ${FRAPPE_REDIS_CACHE:-redis://redis-cache:6379}
+      FRAPPE_REDIS_QUEUE: ${FRAPPE_REDIS_QUEUE:-redis://redis-queue:6379}
+      FRAPPE_STREAM_LOGGING: ${FRAPPE_STREAM_LOGGING:-1}
+      USE_PROXY: ${USE_PROXY:-1}
+    volumes:
+      - sites-storage:/home/frappe/frappe-bench/sites
+    networks:
+      - frappe-network
+    depends_on:
+      redis-cache:
+        condition: service_healthy
+      redis-queue:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/method/frappe.ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "${WEB_CPU_LIMIT:-2.0}"
+          memory: "${WEB_MEM_LIMIT:-2G}"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  # ============================================================================
+  # 4. Socket.IO Service (Node.js Real-time Broker)
+  # ============================================================================
+  socketio:
+    image: ${FRAPPE_IMAGE:-frappe-app:latest}
+    container_name: frappe-socketio
+    restart: unless-stopped
+    command: ["node", "/home/frappe/frappe-bench/apps/frappe/socketio.js"]
+    environment:
+      FRAPPE_REDIS_CACHE: ${FRAPPE_REDIS_CACHE:-redis://redis-cache:6379}
+      FRAPPE_REDIS_QUEUE: ${FRAPPE_REDIS_QUEUE:-redis://redis-queue:6379}
+    volumes:
+      - sites-storage:/home/frappe/frappe-bench/sites
+    networks:
+      - frappe-network
+    depends_on:
+      redis-queue:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ============================================================================
+  # 5. RQ Background Worker (Short & Default Queues)
+  # ============================================================================
+  worker-default:
+    image: ${FRAPPE_IMAGE:-frappe-app:latest}
+    container_name: frappe-worker-default
+    restart: unless-stopped
+    command: ["bench", "worker", "--queue", "short,default"]
+    environment:
+      FRAPPE_DB_HOST: ${FRAPPE_DB_HOST:-mariadb}
+      FRAPPE_DB_PORT: ${FRAPPE_DB_PORT:-3306}
+      FRAPPE_REDIS_CACHE: ${FRAPPE_REDIS_CACHE:-redis://redis-cache:6379}
+      FRAPPE_REDIS_QUEUE: ${FRAPPE_REDIS_QUEUE:-redis://redis-queue:6379}
+      FRAPPE_STREAM_LOGGING: ${FRAPPE_STREAM_LOGGING:-1}
+    volumes:
+      - sites-storage:/home/frappe/frappe-bench/sites
+    networks:
+      - frappe-network
+    depends_on:
+      redis-queue:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "${WORKER_DEFAULT_CPU_LIMIT:-1.5}"
+          memory: "${WORKER_DEFAULT_MEM_LIMIT:-2G}"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  # ============================================================================
+  # 6. RQ Background Worker (Long Queue - Reports, Heavy Processing)
+  # ============================================================================
+  worker-long:
+    image: ${FRAPPE_IMAGE:-frappe-app:latest}
+    container_name: frappe-worker-long
+    restart: unless-stopped
+    stop_grace_period: 1800s
+    command: ["bench", "worker", "--queue", "long"]
+    environment:
+      FRAPPE_DB_HOST: ${FRAPPE_DB_HOST:-mariadb}
+      FRAPPE_DB_PORT: ${FRAPPE_DB_PORT:-3306}
+      FRAPPE_REDIS_CACHE: ${FRAPPE_REDIS_CACHE:-redis://redis-cache:6379}
+      FRAPPE_REDIS_QUEUE: ${FRAPPE_REDIS_QUEUE:-redis://redis-queue:6379}
+      FRAPPE_STREAM_LOGGING: ${FRAPPE_STREAM_LOGGING:-1}
+    volumes:
+      - sites-storage:/home/frappe/frappe-bench/sites
+    networks:
+      - frappe-network
+    depends_on:
+      redis-queue:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "${WORKER_LONG_CPU_LIMIT:-2.0}"
+          memory: "${WORKER_LONG_MEM_LIMIT:-4G}"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  # ============================================================================
+  # 7. Scheduler (Periodic Job Dispatcher - Strictly 1 Instance)
+  # ============================================================================
+  scheduler:
+    image: ${FRAPPE_IMAGE:-frappe-app:latest}
+    container_name: frappe-scheduler
+    restart: unless-stopped
+    command: ["bench", "schedule"]
+    environment:
+      FRAPPE_DB_HOST: ${FRAPPE_DB_HOST:-mariadb}
+      FRAPPE_DB_PORT: ${FRAPPE_DB_PORT:-3306}
+      FRAPPE_REDIS_CACHE: ${FRAPPE_REDIS_CACHE:-redis://redis-cache:6379}
+      FRAPPE_REDIS_QUEUE: ${FRAPPE_REDIS_QUEUE:-redis://redis-queue:6379}
+      FRAPPE_STREAM_LOGGING: ${FRAPPE_STREAM_LOGGING:-1}
+    volumes:
+      - sites-storage:/home/frappe/frappe-bench/sites
+    networks:
+      - frappe-network
+    depends_on:
+      redis-cache:
+        condition: service_healthy
+      redis-queue:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "${SCHEDULER_CPU_LIMIT:-0.5}"
+          memory: "${SCHEDULER_MEM_LIMIT:-512M}"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ============================================================================
+  # 8. Nginx Reverse Proxy (Statics, X-Accel-Redirect, Dynamic Routing)
+  # ============================================================================
+  proxy:
+    image: ${NGINX_IMAGE:-frappe-nginx:latest}
+    container_name: frappe-proxy
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    environment:
+      UPSTREAM_WEB: web:8000
+      UPSTREAM_SOCKETIO: socketio:9000
+      CLIENT_MAX_BODY_SIZE: ${CLIENT_MAX_BODY_SIZE:-50M}
+      PROXY_READ_TIMEOUT: ${PROXY_READ_TIMEOUT:-120s}
+      ENABLE_SSL: ${ENABLE_SSL:-false}
+      SSL_CERT_PATH: ${SSL_CERT_PATH:-/etc/ssl/certs/tls.crt}
+      SSL_KEY_PATH: ${SSL_KEY_PATH:-/etc/ssl/certs/tls.key}
+    volumes:
+      - sites-storage:/home/frappe/frappe-bench/sites:ro
+      - ${HOST_SSL_CERTS_DIR:-./certs}:/etc/ssl/certs:ro
+    networks:
+      - frappe-network
+    depends_on:
+      - web
+      - socketio
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"

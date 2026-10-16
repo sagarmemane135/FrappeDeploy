@@ -1,0 +1,39 @@
+version: "3.8"
+
+volumes:
+  mariadb-storage:
+    name: frappe-mariadb-data
+
+services:
+  mariadb:
+    image: mariadb:10.6
+    container_name: frappe-mariadb
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --innodb-file-per-table=1
+      - --innodb-buffer-pool-size=${MARIADB_BUFFER_POOL_SIZE:-2G}
+      - --max-connections=${MARIADB_MAX_CONNECTIONS:-500}
+      - --innodb-log-file-size=512M
+      - --innodb-flush-log-at-trx-commit=1
+      - --skip-character-set-client-handshake
+      - --slow-query-log=1
+      - --long-query-time=2
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD must be specified}
+    volumes:
+      - mariadb-storage:/var/lib/mysql
+    networks:
+      - frappe-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"

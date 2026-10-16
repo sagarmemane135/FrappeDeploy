@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: frappe-sites-pvc
+  labels:
+    app.kubernetes.io/name: frappe
+    app.kubernetes.io/component: storage
+spec:
+  # Strategy B: Shared Persistent Volume for multi-tenant sites, assets, and uploads
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 50Gi
+  # storageClassName: efs-sc # AWS EFS, Azure Files NFS, CephFS, GlusterFS, or NFS provisioner
+  # If unset, uses cluster default ReadWriteMany storage class

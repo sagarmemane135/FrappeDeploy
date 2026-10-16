@@ -1,0 +1,59 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: frappe-backup-cronjob
+  labels:
+    app.kubernetes.io/name: frappe
+    app.kubernetes.io/component: backup-job
+spec:
+  # Daily backup at 02:00 UTC
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: frappe
+            app.kubernetes.io/component: backup-job
+        spec:
+          restartPolicy: OnFailure
+          volumes:
+            - name: sites-storage
+              persistentVolumeClaim:
+                claimName: frappe-sites-pvc
+            - name: config-volume
+              configMap:
+                name: frappe-bench-config
+          containers:
+            - name: backup
+              image: frappe-app:latest
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -e
+                  echo ">>> Running automated backups across all sites..."
+                  # Takes full backup including public/private files
+                  bench --site all backup --with-files
+                  echo ">>> Backups completed successfully."
+              envFrom:
+                - configMapRef:
+                    name: frappe-bench-config
+                - secretRef:
+                    name: frappe-secrets
+              volumeMounts:
+                - name: sites-storage
+                  mountPath: /home/frappe/frappe-bench/sites
+                - name: config-volume
+                  mountPath: /home/frappe/frappe-bench/sites/common_site_config.json
+                  subPath: common_site_config.json
+              resources:
+                requests:
+                  cpu: 250m
+                  memory: 512Mi
+                limits:
+                  cpu: 1000m
+                  memory: 2Gi

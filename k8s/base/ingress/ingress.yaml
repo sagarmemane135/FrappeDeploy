@@ -1,0 +1,83 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: frappe-ingress
+  labels:
+    app.kubernetes.io/name: frappe
+    app.kubernetes.io/component: ingress
+  annotations:
+    # --------------------------------------------------------------------------
+    # Ingress Controller Behavior & Performance
+    # --------------------------------------------------------------------------
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "128k"
+    nginx.ingress.kubernetes.io/proxy-buffers-number: "4"
+
+    # Multi-tenancy: Pass incoming hostname as Frappe tenant identifier
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header X-Frappe-Site-Name $host;
+
+    # --------------------------------------------------------------------------
+    # TLS Strategy Options (Uncomment matching operational model):
+    #
+    # OPTION A: Bring-Your-Own-Certificate (Enterprise Wildcard / Internal PKI)
+    #   Managed via standard Kubernetes Secret:
+    #   kubectl create secret tls frappe-tls-cert --cert=tls.crt --key=tls.key
+    #
+    # OPTION B: Cloud Load Balancer SSL Termination (AWS ALB ACM / GCP SSL)
+    #   alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:...
+    #   alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    #   alb.ingress.kubernetes.io/ssl-redirect: '443'
+    #
+    # OPTION C: Automated ACME Issuer (cert-manager - Let's Encrypt / Vault)
+    #   cert-manager.io/cluster-issuer: "letsencrypt-production"
+    # --------------------------------------------------------------------------
+spec:
+  # TLS Block: Populated for Option A or Option C.
+  # If SSL is terminated upstream at Cloud ALB / CDN / Cloudflare, remove or leave empty.
+  tls:
+    - hosts:
+        - "*.erp.example.com"
+        - "erp.example.com"
+      secretName: frappe-tls-cert
+
+  rules:
+    # Multi-tenant host rule: Match root domain and tenant subdomains
+    - host: "erp.example.com"
+      http:
+        paths:
+          - path: /socket.io
+            pathType: Prefix
+            backend:
+              service:
+                name: frappe-socketio
+                port:
+                  number: 9000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frappe-web
+                port:
+                  number: 8000
+
+    - host: "*.erp.example.com"
+      http:
+        paths:
+          - path: /socket.io
+            pathType: Prefix
+            backend:
+              service:
+                name: frappe-socketio
+                port:
+                  number: 9000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frappe-web
+                port:
+                  number: 8000

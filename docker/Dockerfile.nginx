@@ -1,0 +1,28 @@
+FROM nginx:1.25-alpine
+
+# Remove default configuration
+RUN rm -rf /etc/nginx/conf.d/*
+
+# Copy master Nginx configuration
+COPY deploy/docker/nginx/nginx.conf /etc/nginx/nginx.conf
+
+# Copy dynamic virtual host templates
+# nginx:alpine automatically executes envsubst on files in /etc/nginx/templates/*.template
+# and outputs them to /etc/nginx/conf.d/*.conf
+COPY deploy/docker/nginx/templates/default.conf.template /etc/nginx/templates/default.conf.template
+
+# Default template environment variables (can be overridden at runtime)
+ENV UPSTREAM_WEB="web:8000" \
+    UPSTREAM_SOCKETIO="socketio:9000" \
+    CLIENT_MAX_BODY_SIZE="50M" \
+    PROXY_READ_TIMEOUT="120s" \
+    HTTP_PORT="80" \
+    HTTPS_PORT="443" \
+    ENABLE_SSL="false" \
+    SSL_CERT_PATH="/etc/ssl/certs/tls.crt" \
+    SSL_KEY_PATH="/etc/ssl/certs/tls.key" \
+    SERVER_NAME="_"
+
+EXPOSE 80 443
+
+CMD ["nginx", "-g", "daemon off;"]

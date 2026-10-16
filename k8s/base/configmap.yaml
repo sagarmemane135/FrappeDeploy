@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frappe-bench-config
+  labels:
+    app.kubernetes.io/name: frappe
+    app.kubernetes.io/component: config
+data:
+  # Universal Bench common_site_config.json
+  common_site_config.json: |
+    {
+      "redis_cache": "redis://frappe-redis-cache:6379",
+      "redis_queue": "redis://frappe-redis-queue:6379",
+      "socketio_port": 9000,
+      "webserver_port": 8000,
+      "db_port": 3306,
+      "use_redis_auth": false
+    }
+  FRAPPE_STREAM_LOGGING: "1"
+  USE_PROXY: "1"
