@@ -129,9 +129,38 @@ def get_app_name(app):
     return cleaned
 
 
+def generate_apps_txt(target_apps_dir: Path, target_sites_dir: Path, specified_apps=None):
+    target_sites_dir.mkdir(parents=True, exist_ok=True)
+    ordered_apps = []
+
+    # Frappe core framework must always be the first entry in apps.txt
+    if (target_apps_dir / "frappe").is_dir():
+        ordered_apps.append("frappe")
+
+    # Add specified apps from apps.json in declared order
+    if specified_apps:
+        for app in specified_apps:
+            name = get_app_name(app)
+            if name != "frappe" and (target_apps_dir / name).is_dir() and name not in ordered_apps:
+                ordered_apps.append(name)
+
+    # Add any remaining directories found in apps
+    for app_dir in sorted(target_apps_dir.iterdir()):
+        if app_dir.is_dir() and app_dir.name not in ordered_apps and not app_dir.name.startswith("."):
+            ordered_apps.append(app_dir.name)
+
+    apps_txt_path = target_sites_dir / "apps.txt"
+    apps_txt_path.write_text("\n".join(ordered_apps) + "\n", encoding="utf-8")
+    print(f"\n[fetch_apps] Generated {apps_txt_path} with {len(ordered_apps)} apps:")
+    for app_name in ordered_apps:
+        print(f"  - {app_name}")
+
+
 def main():
     target_apps_dir = Path("/home/frappe/frappe-bench/apps")
+    target_sites_dir = Path("/home/frappe/frappe-bench/sites")
     target_apps_dir.mkdir(parents=True, exist_ok=True)
+    target_sites_dir.mkdir(parents=True, exist_ok=True)
 
     setup_ssh()
     token = get_git_token()
@@ -142,6 +171,7 @@ def main():
         print("[fetch_apps] No apps to fetch. Checking if local apps exist...")
         existing_apps = [p.name for p in target_apps_dir.iterdir() if p.is_dir()]
         print(f"[fetch_apps] Existing apps found: {existing_apps}")
+        generate_apps_txt(target_apps_dir, target_sites_dir)
         return
 
     print(f"[fetch_apps] Processing {len(apps)} applications...")
@@ -181,7 +211,8 @@ def main():
 
         print(f"[fetch_apps] Successfully cloned '{name}'.")
 
-    print("\n[fetch_apps] All applications fetched successfully.")
+    generate_apps_txt(target_apps_dir, target_sites_dir, specified_apps=apps)
+    print("\n[fetch_apps] All applications fetched and configured successfully.")
 
 
 if __name__ == "__main__":

@@ -12,15 +12,25 @@ TEMPLATE_DIR="/home/frappe/frappe-bench/sites_template"
 if [ -d "$TEMPLATE_DIR" ]; then
     mkdir -p "$SITES_DIR/assets"
 
-    # Synchronize compiled assets from image to shared volume if newer or missing
+    # Synchronize compiled assets from image to shared volume
     if [ -d "$TEMPLATE_DIR/assets" ]; then
-        cp -rn "$TEMPLATE_DIR/assets/"* "$SITES_DIR/assets/" 2>/dev/null || true
+        cp -rf "$TEMPLATE_DIR/assets/." "$SITES_DIR/assets/" 2>/dev/null || true
     fi
 
-    # Initialize apps.txt if absent
-    if [ ! -f "$SITES_DIR/apps.txt" ] && [ -f "$TEMPLATE_DIR/apps.txt" ]; then
-        echo "[Entrypoint] Initializing $SITES_DIR/apps.txt from template..."
-        cp "$TEMPLATE_DIR/apps.txt" "$SITES_DIR/apps.txt"
+    # Synchronize apps.txt with newly added image apps
+    if [ -f "$TEMPLATE_DIR/apps.txt" ]; then
+        if [ ! -f "$SITES_DIR/apps.txt" ]; then
+            echo "[Entrypoint] Initializing $SITES_DIR/apps.txt from template..."
+            cp "$TEMPLATE_DIR/apps.txt" "$SITES_DIR/apps.txt"
+        else
+            while IFS= read -r app || [ -n "$app" ]; do
+                [ -z "$app" ] && continue
+                if ! grep -Fxq "$app" "$SITES_DIR/apps.txt"; then
+                    echo "[Entrypoint] Registering newly installed app '$app' into $SITES_DIR/apps.txt"
+                    echo "$app" >> "$SITES_DIR/apps.txt"
+                fi
+            done < "$TEMPLATE_DIR/apps.txt"
+        fi
     fi
 fi
 

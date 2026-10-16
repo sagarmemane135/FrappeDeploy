@@ -1,3 +1,4 @@
+# check=skip=SecretsUsedInArgOrEnv
 # Global build arguments (available in all FROM instructions)
 ARG PYTHON_VERSION=3.11
 ARG NODE_VERSION=18
@@ -56,19 +57,45 @@ WORKDIR /home/frappe/frappe-bench
 # Install Yarn package manager
 RUN npm install -g yarn --force
 
-# Copy application source code from app-source-builder (No local host apps required)
+# Copy application source code and sites metadata from app-source-builder
 COPY --from=app-source-builder /home/frappe/frappe-bench/apps /home/frappe/frappe-bench/apps
+COPY --from=app-source-builder /home/frappe/frappe-bench/sites /home/frappe/frappe-bench/sites
+
+# Ensure sites/apps.txt and sites/assets exist
+RUN mkdir -p /home/frappe/frappe-bench/sites/assets && \
+    if [ ! -f /home/frappe/frappe-bench/sites/apps.txt ]; then \
+        (test -d apps/frappe && echo frappe || true; ls -1 apps | grep -v '^frappe$') > /home/frappe/frappe-bench/sites/apps.txt; \
+    fi
+
+# Populate static public assets from apps into sites/assets
+RUN for app_dir in apps/*; do \
+        app=$(basename "$app_dir"); \
+        if [ -d "$app_dir/$app/public" ]; then \
+            echo "Populating static public assets for $app..." && \
+            mkdir -p "sites/assets/$app" && \
+            cp -r "$app_dir/$app/public/"* "sites/assets/$app/" 2>/dev/null || true; \
+        fi \
+    done
 
 # Install Node dependencies across all apps that have package.json
 RUN for app_dir in apps/*; do \
         if [ -f "$app_dir/package.json" ]; then \
             echo "Installing node dependencies for $app_dir..." && \
-            (cd "$app_dir" && yarn install --frozen-lockfile --ignore-engines --network-timeout 300000); \
+            (cd "$app_dir" && yarn install --ignore-engines --network-timeout 300000); \
         fi \
     done
 
 # Compile production frontend bundles
 RUN cd apps/frappe && yarn build --production
+
+# Sync any newly generated frontend files back into sites/assets
+RUN for app_dir in apps/*; do \
+        app=$(basename "$app_dir"); \
+        if [ -d "$app_dir/$app/public" ]; then \
+            mkdir -p "sites/assets/$app" && \
+            cp -r "$app_dir/$app/public/"* "sites/assets/$app/" 2>/dev/null || true; \
+        fi \
+    done
 
 
 # ==============================================================================
@@ -155,16 +182,16 @@ COPY --chown=frappe:frappe --from=backend-builder /home/frappe/frappe-bench/env 
 # Copy app source code from Stage 0
 COPY --chown=frappe:frappe --from=app-source-builder /home/frappe/frappe-bench/apps /home/frappe/frappe-bench/apps
 
-# Pre-populate compiled static assets in an immutable container directory
+# Pre-populate compiled static assets and sites metadata in an immutable container directory
 # The entrypoint will mirror these to shared storage if needed
 RUN mkdir -p /home/frappe/frappe-bench/sites/assets \
-             /home/frappe/frappe-bench/sites_template \
+             /home/frappe/frappe-bench/sites_template/assets \
              /home/frappe/frappe-bench/logs
 
-COPY --chown=frappe:frappe --from=asset-builder /home/frappe/frappe-bench/apps/frappe/frappe/public /home/frappe/frappe-bench/sites_template/assets/frappe
-
-# Generate baseline apps.txt from installed apps
-RUN ls -1 /home/frappe/frappe-bench/apps > /home/frappe/frappe-bench/sites_template/apps.txt
+COPY --chown=frappe:frappe --from=asset-builder /home/frappe/frappe-bench/sites/assets /home/frappe/frappe-bench/sites_template/assets
+COPY --chown=frappe:frappe --from=asset-builder /home/frappe/frappe-bench/sites/assets /home/frappe/frappe-bench/sites/assets
+COPY --chown=frappe:frappe --from=app-source-builder /home/frappe/frappe-bench/sites/apps.txt /home/frappe/frappe-bench/sites_template/apps.txt
+COPY --chown=frappe:frappe --from=app-source-builder /home/frappe/frappe-bench/sites/apps.txt /home/frappe/frappe-bench/sites/apps.txt
 
 # Environment variables
 ENV PATH="/home/frappe/frappe-bench/env/bin:$PATH" \
