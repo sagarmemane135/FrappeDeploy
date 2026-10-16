@@ -48,11 +48,14 @@ case "$COMMAND" in
         ADMIN_PASSWORD=""
         INSTALL_APPS=()
 
+        DB_ROOT_PW="${DB_ROOT_PASSWORD:-}"
+
         while [[ $# -gt 0 ]]; do
             case "$1" in
                 --db-name) DB_NAME="$2"; shift 2 ;;
                 --admin-password) ADMIN_PASSWORD="$2"; shift 2 ;;
                 --install-app) INSTALL_APPS+=("$2"); shift 2 ;;
+                --db-root-password|--mariadb-root-password) DB_ROOT_PW="$2"; shift 2 ;;
                 *) echo "Unknown option: $1"; exit 1 ;;
             esac
         done
@@ -69,9 +72,9 @@ case "$COMMAND" in
             CMD_ARGS+=(--admin-password "admin")
         fi
 
-        # Pass MariaDB root password from environment if set
-        if [ -n "${DB_ROOT_PASSWORD:-}" ]; then
-            CMD_ARGS+=(--mariadb-root-password "$DB_ROOT_PASSWORD")
+        # Pass MariaDB root password if set via flag or environment
+        if [ -n "$DB_ROOT_PW" ]; then
+            CMD_ARGS+=(--mariadb-root-password "$DB_ROOT_PW")
         fi
 
         bench "${CMD_ARGS[@]}"

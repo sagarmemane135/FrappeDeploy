@@ -123,8 +123,8 @@ ENV PATH="/home/frappe/frappe-bench/env/bin:$PATH"
 # Copy application source code from app-source-builder (No local host apps required)
 COPY --from=app-source-builder /home/frappe/frappe-bench/apps /home/frappe/frappe-bench/apps
 
-# Upgrade packaging tools
-RUN pip install --no-cache-dir --upgrade pip wheel setuptools
+# Upgrade packaging tools & install bench CLI
+RUN pip install --no-cache-dir --upgrade pip wheel setuptools frappe-bench
 
 # Install frappe core first
 RUN pip install --no-cache-dir -e ./apps/frappe
@@ -182,6 +182,9 @@ COPY --chown=frappe:frappe --from=backend-builder /home/frappe/frappe-bench/env 
 # Copy app source code from Stage 0
 COPY --chown=frappe:frappe --from=app-source-builder /home/frappe/frappe-bench/apps /home/frappe/frappe-bench/apps
 
+# Copy Node.js dependencies for Frappe Socket.IO service from Stage 1
+COPY --chown=frappe:frappe --from=asset-builder /home/frappe/frappe-bench/apps/frappe/node_modules /home/frappe/frappe-bench/apps/frappe/node_modules
+
 # Pre-populate compiled static assets and sites metadata in an immutable container directory
 # The entrypoint will mirror these to shared storage if needed
 RUN mkdir -p /home/frappe/frappe-bench/sites/assets \
@@ -209,7 +212,8 @@ USER root
 RUN chmod +x /usr/local/bin/entrypoint.sh \
              /usr/local/bin/site-ops.sh \
              /usr/local/bin/health-check.sh \
-             /usr/local/bin/backup-s3.sh
+             /usr/local/bin/backup-s3.sh && \
+    ln -sf /home/frappe/frappe-bench/env/bin/bench /usr/local/bin/bench
 USER frappe
 
 EXPOSE 8000 9000

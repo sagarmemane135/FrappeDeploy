@@ -9,7 +9,7 @@ upstream frappe_socketio {
 }
 
 # Map for WebSocket Connection Header
-map $$http_upgrade $$connection_upgrade {
+map $http_upgrade $connection_upgrade {
     default upgrade;
     ''      close;
 }
@@ -34,7 +34,7 @@ server {
 
     # 2. Public Uploads (Dynamic site resolution based on Host)
     location ~ ^/files/(.*)$ {
-        alias /home/frappe/frappe-bench/sites/$$host/public/files/$$1;
+        alias /home/frappe/frappe-bench/sites/$host/public/files/$1;
         expires 30d;
         add_header Cache-Control "public, max-age=2592000";
         try_files "" =404;
@@ -43,31 +43,31 @@ server {
     # 3. Private Uploads (Protected via X-Accel-Redirect)
     location /private/files/ {
         proxy_pass http://frappe_web;
-        proxy_set_header Host $$host;
+        proxy_set_header Host $host;
         proxy_set_header X-Use-X-Accel-Redirect v1;
-        proxy_set_header X-Real-IP $$remote_addr;
-        proxy_set_header X-Forwarded-For $$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $$scheme;
-        proxy_set_header X-Frappe-Site-Name $$host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Frappe-Site-Name $host;
     }
 
     # Protected internal file serving (triggered ONLY by X-Accel-Redirect response from Frappe)
     location ~ ^/protected/(.*)$ {
         internal;
-        alias /home/frappe/frappe-bench/sites/$$host/$$1;
+        alias /home/frappe/frappe-bench/sites/$host/$1;
     }
 
     # 4. Socket.IO Real-time Events (WebSockets)
     location /socket.io/ {
         proxy_pass http://frappe_socketio;
         proxy_http_version 1.1;
-        proxy_set_header Upgrade $$http_upgrade;
-        proxy_set_header Connection $$connection_upgrade;
-        proxy_set_header Host $$host;
-        proxy_set_header X-Frappe-Site-Name $$host;
-        proxy_set_header X-Real-IP $$remote_addr;
-        proxy_set_header X-Forwarded-For $$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $$scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Frappe-Site-Name $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
         proxy_read_timeout ${PROXY_READ_TIMEOUT};
     }
 
@@ -78,11 +78,11 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Connection "";
 
-        proxy_set_header Host $$host;
-        proxy_set_header X-Real-IP $$remote_addr;
-        proxy_set_header X-Forwarded-For $$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $$scheme;
-        proxy_set_header X-Frappe-Site-Name $$host;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Frappe-Site-Name $host;
 
         proxy_read_timeout ${PROXY_READ_TIMEOUT};
         proxy_buffer_size 128k;
