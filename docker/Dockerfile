@@ -1,7 +1,47 @@
+# Global build arguments (available in all FROM instructions)
+ARG PYTHON_VERSION=3.11
+ARG NODE_VERSION=18
+ARG DEBIAN_RELEASE=bullseye
+
+# ==============================================================================
+# STAGE 0: Application Source Fetcher (Clones from Git via apps.json or build args)
+# ==============================================================================
+FROM python:${PYTHON_VERSION}-slim-${DEBIAN_RELEASE} AS app-source-builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    openssh-client \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /home/frappe/frappe-bench
+
+# Build arguments for dynamic app fetching & private repo authentication
+ARG APPS_JSON=""
+ARG APPS_JSON_BASE64=""
+ARG GITHUB_TOKEN=""
+ARG GIT_TOKEN=""
+
+ENV APPS_JSON=${APPS_JSON} \
+    APPS_JSON_BASE64=${APPS_JSON_BASE64} \
+    GITHUB_TOKEN=${GITHUB_TOKEN} \
+    GIT_TOKEN=${GIT_TOKEN}
+
+# Copy cloner automation & apps specification (no host apps required)
+COPY docker/fetch_apps.py /opt/fetch_apps.py
+COPY apps.json* /opt/apps.json
+
+# Fetch all applications into /home/frappe/frappe-bench/apps (using SSH agent or Tokens)
+RUN --mount=type=ssh \
+    --mount=type=secret,id=git_token,required=false \
+    --mount=type=secret,id=github_token,required=false \
+    python3 /opt/fetch_apps.py
+
+
 # ==============================================================================
 # STAGE 1: Frontend Asset Builder
 # ==============================================================================
-FROM node:18-bullseye-slim AS asset-builder
+FROM node:${NODE_VERSION}-${DEBIAN_RELEASE}-slim AS asset-builder
 
 # Install minimal build tools needed for node-gyp / native modules
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -17,8 +57,8 @@ WORKDIR /home/frappe/frappe-bench
 # Install Yarn package manager
 RUN npm install -g yarn --force
 
-# Copy application source directories
-COPY apps /home/frappe/frappe-bench/apps
+# Copy application source code from app-source-builder (No local host apps required)
+COPY --from=app-source-builder /home/frappe/frappe-bench/apps /home/frappe/frappe-bench/apps
 
 # Install Node dependencies across all apps that have package.json
 RUN for app_dir in apps/*; do \
@@ -35,7 +75,7 @@ RUN cd apps/frappe && yarn build --production
 # ==============================================================================
 # STAGE 2: Python Backend Environment Builder
 # ==============================================================================
-FROM python:3.11-slim-bullseye AS backend-builder
+FROM python:${PYTHON_VERSION}-slim-${DEBIAN_RELEASE} AS backend-builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
@@ -54,7 +94,8 @@ WORKDIR /home/frappe/frappe-bench
 RUN python3 -m venv /home/frappe/frappe-bench/env
 ENV PATH="/home/frappe/frappe-bench/env/bin:$PATH"
 
-COPY apps /home/frappe/frappe-bench/apps
+# Copy application source code from app-source-builder (No local host apps required)
+COPY --from=app-source-builder /home/frappe/frappe-bench/apps /home/frappe/frappe-bench/apps
 
 # Upgrade packaging tools
 RUN pip install --no-cache-dir --upgrade pip wheel setuptools
@@ -76,7 +117,9 @@ RUN for app_dir in ./apps/*; do \
 # ==============================================================================
 # STAGE 3: Minimal Production Runtime
 # ==============================================================================
-FROM python:3.11-slim-bullseye AS runtime
+FROM python:${PYTHON_VERSION}-slim-${DEBIAN_RELEASE} AS runtime
+
+ARG NODE_VERSION=18
 
 # System runtime dependencies (libraries only, no compilers)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -95,8 +138,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     procps \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Node.js runtime strictly for Frappe Socket.IO service
-RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+# Install Node.js runtime strictly for Frappe Socket.IO service (dynamically matches NODE_VERSION)
+RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
@@ -110,8 +153,8 @@ WORKDIR /home/frappe/frappe-bench
 # Copy Python virtual environment from Stage 2
 COPY --chown=frappe:frappe --from=backend-builder /home/frappe/frappe-bench/env /home/frappe/frappe-bench/env
 
-# Copy app source code
-COPY --chown=frappe:frappe apps /home/frappe/frappe-bench/apps
+# Copy app source code from Stage 0
+COPY --chown=frappe:frappe --from=app-source-builder /home/frappe/frappe-bench/apps /home/frappe/frappe-bench/apps
 
 # Pre-populate compiled static assets in an immutable container directory
 # The entrypoint will mirror these to shared storage if needed

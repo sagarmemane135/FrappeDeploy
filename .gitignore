@@ -9,6 +9,9 @@ certs/
 secrets/
 
 # OS and editor files
+__pycache__/
+*.pyc
+*.pyo
 .DS_Store
 Thumbs.db
 *.swp
@@ -23,9 +26,6 @@ Thumbs.db
 *.tar
 *.tgz
 *.zip
-
-# Local cloned apps for Docker build context
-apps/
 
 # Logs
 logs/

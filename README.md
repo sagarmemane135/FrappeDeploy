@@ -180,25 +180,108 @@ This framework leverages **Nginx `X-Accel-Redirect`**:
 
 ## 6. Building Container Images
 
-The architecture decouples the core application runtime from the reverse proxy edge:
-1. **Application Runtime Image** (`Dockerfile`): Multi-stage container encapsulating Python virtual environment, all installed Frappe apps, pre-compiled static assets, and CLI tools.
-2. **Reverse Proxy Image** (`Dockerfile.nginx`): Lightweight Alpine-based Nginx with runtime environment-variable template rendering, gzip compression, and `X-Accel-Redirect` protection.
+The architecture is **100% self-contained**: it does **not** assume any application repositories exist locally on your machine. All code is fetched and compiled dynamically during the build stage using `apps.json` or build arguments.
 
-### Building the Application Image
-Execute from the bench root directory:
+Furthermore, **Python and Node.js versions are fully parameterized** via build arguments.
+
+### Build Arguments Reference
+
+| Argument | Default | Description |
+| :--- | :--- | :--- |
+| `PYTHON_VERSION` | `3.11` | Python base version (e.g. `3.10`, `3.11`, `3.12`) |
+| `NODE_VERSION` | `18` | Node.js base version for asset compiler & Socket.IO (e.g. `18`, `20`) |
+| `APPS_JSON_BASE64` | `""` | Base64-encoded JSON string of apps (Recommended: avoids all quote escaping) |
+| `APPS_JSON` | `""` | Raw JSON string of apps to clone and build |
+| `GITHUB_TOKEN` / `GIT_TOKEN` | `""` | Personal Access Token for private HTTPS git repositories |
+
+---
+
+### A. Building with Public Repositories (apps.json)
+By default, Docker reads `apps.json`:
 ```bash
-docker build \
-  -t my-registry.io/erp/frappe-app:v1.0.0 \
-  -f deploy/docker/Dockerfile .
+docker build -t frappe-app:latest -f docker/Dockerfile .
 ```
 
-### Building the Nginx Reverse Proxy Image
-Execute from the `deploy/docker` directory (standalone, no bench dependencies needed):
+To customize Python or Node versions:
 ```bash
-cd deploy/docker
 docker build \
-  -t my-registry.io/erp/frappe-nginx:v1.0.0 \
-  -f Dockerfile.nginx .
+  --build-arg PYTHON_VERSION=3.11 \
+  --build-arg NODE_VERSION=20 \
+  -t frappe-app:latest \
+  -f docker/Dockerfile .
+```
+
+---
+
+### B. Building with Private Git Repositories
+
+#### Option 1: Using BuildKit SSH Agent Forwarding (Recommended for SSH URLs: `git@github.com:...`)
+Your local SSH key is forwarded in memory to authenticate during git clone without ever being saved into the Docker image:
+```bash
+# Linux / macOS:
+DOCKER_BUILDKIT=1 docker build --ssh default -t frappe-app:latest -f docker/Dockerfile .
+
+# Windows PowerShell:
+$env:DOCKER_BUILDKIT=1
+docker build --ssh default -t frappe-app:latest -f docker/Dockerfile .
+```
+
+#### Option 2: Using GitHub Personal Access Token (for HTTPS URLs: `https://github.com/...`)
+```bash
+# Via BuildKit Secret (most secure, avoids leaking in history):
+docker build --secret id=git_token,src=token.txt -t frappe-app:latest -f docker/Dockerfile .
+
+# Or via Build Argument:
+docker build --build-arg GITHUB_TOKEN="ghp_yourTokenHere" -t frappe-app:latest -f docker/Dockerfile .
+```
+
+---
+
+### C. Overriding Apps List via Base64 (Recommended: Zero Quote Escaping)
+
+Passing JSON strings directly into Docker build args often fails due to shell quote escaping rules (`"`, `'`, `\`). **Base64** solves this completely.
+
+#### In Windows PowerShell:
+```powershell
+# Method 1: Encode directly from apps.json file
+$APPS_BASE64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes("apps.json"))
+
+# Method 2: Or encode from an inline string
+$json = '[{"url":"https://github.com/frappe/frappe","branch":"version-15"},{"url":"git@github.com:my-org/my-custom-app.git","branch":"main"}]'
+$APPS_BASE64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($json))
+
+# Build with Base64 and SSH forwarding (for private repos):
+docker build `
+  --build-arg APPS_JSON_BASE64=$APPS_BASE64 `
+  --ssh default `
+  -t frappe-app:latest `
+  -f docker/Dockerfile .
+```
+
+#### In Linux / macOS / CI/CD (Bash):
+```bash
+# Method 1: Encode directly from apps.json file
+APPS_BASE64=$(base64 -w 0 apps.json)
+
+# Method 2: Or encode from an inline string
+APPS_BASE64=$(echo -n '[{"url":"https://github.com/frappe/frappe","branch":"version-15"},{"url":"git@github.com:my-org/my-custom-app.git","branch":"main"}]' | base64 -w 0)
+
+# Build:
+docker build \
+  --build-arg APPS_JSON_BASE64="$APPS_BASE64" \
+  --ssh default \
+  -t frappe-app:latest \
+  -f docker/Dockerfile .
+```
+
+---
+
+### D. Building the Nginx Reverse Proxy Image
+Execute from the `docker` directory (lightweight, ~15 seconds build):
+```bash
+cd docker
+docker build -t frappe-nginx:latest -f Dockerfile.nginx .
+cd ..
 ```
 
 ---
